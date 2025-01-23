@@ -141,7 +141,7 @@ class SignalAPI:
         ):
             raise GroupsError
 
-    async def get_attachment(self, attachment_id: str) -> str:
+    async def get_attachment_bytes(self, attachment_id: str) -> bytes:
         uri = f"{self._attachment_rest_uri()}/{attachment_id}"
         try:
             async with aiohttp.ClientSession() as session:
@@ -154,6 +154,10 @@ class SignalAPI:
         ):
             raise GetAttachmentError
 
+        return content
+
+    async def get_attachment(self, attachment_id: str) -> str:
+        content = await self.get_attachment_bytes(attachment_id)
         base64_bytes = base64.b64encode(content)
         base64_string = str(base64_bytes, encoding="utf-8")
 
@@ -223,7 +227,7 @@ class SignalAPI:
         return f"http://{self.signal_service}/v1/attachments"
 
     def _receive_ws_uri(self):
-        return f"ws://{self.signal_service}/v1/receive/{self.phone_number}"
+        return f"ws://{self.signal_service}/v1/receive/{self.phone_number}?ignore_attachments=true"
 
     def _send_rest_uri(self):
         return f"http://{self.signal_service}/v2/send"
