@@ -178,6 +178,10 @@ class SignalAPI:
         ):
             raise GetAttachmentError
 
+        return content
+
+    async def get_attachment(self, attachment_id: str) -> str:
+        content = await self.get_attachment_bytes(attachment_id)
         base64_bytes = base64.b64encode(content)
         base64_string = str(base64_bytes, encoding="utf-8")
 
@@ -279,6 +283,8 @@ class SignalAPI:
                 return (await self.health_check()).status == 204
             except HealthCheckError as e:
                 return False
+    def _receive_ws_uri(self):
+        return f"ws://{self.signal_service}/v1/receive/{self.phone_number}?ignore_attachments=true"
 
 
 class SignalAPIURIs:

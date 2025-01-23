@@ -12,7 +12,7 @@ import itertools
 
 from .api import SignalAPI, ReceiveMessagesError
 from .command import Command
-from .message import Message, UnknownMessageFormatError
+from .message import Message, UnknownMessageFormatError, message_from_json
 from .storage import RedisStorage, SQLiteStorage
 from .context import Context
 
@@ -25,6 +25,40 @@ CommandList: TypeAlias = list[
     ]
 ]
 
+def _is_phone_number(phone_number: str) -> bool:
+    if phone_number is None:
+        return False
+    if phone_number[0] != "+":
+        return False
+    if len(phone_number[1:]) > 15:
+        return False
+    return True
+
+def _is_valid_uuid(receiver_uuid: str):
+    try:
+        uuid.UUID(str(receiver_uuid))
+        return True
+    except ValueError:
+        return False
+
+def _is_group_id(group_id: str) -> bool:
+    """Check if group_id has the right format, e.g.
+
+            random string                                              length 66
+            ↓                                                          ↓
+    group.OyZzqio1xDmYiLsQ1VsqRcUFOU4tK2TcECmYt2KeozHJwglMBHAPS7jlkrm=
+    ↑                                                                ↑
+    prefix                                                           suffix
+    """
+    if group_id is None:
+        return False
+
+    return re.match(r"^group\.[a-zA-Z0-9]{59}=$", group_id)
+
+def _is_internal_id(internal_id: str) -> bool:
+    if internal_id is None:
+        return False
+    return internal_id[-1] == "="
 
 class SignalBot:
     def __init__(self, config: dict):
@@ -39,6 +73,7 @@ class SignalBot:
         storage:
             redis_host: "redis"
             redis_port: 6379
+        auto_download_attachments: False
         retry_interval: 1
         """
         self.config = config
@@ -54,6 +89,8 @@ class SignalBot:
         self._groups_by_id = {}
         self._groups_by_internal_id = {}
         self._groups_by_name = defaultdict(list)
+
+        self._auto_download_attachments = self.config.get("auto_download_attachments", True)
 
         try:
             self._phone_number = self.config["phone_number"]
@@ -91,73 +128,6 @@ class SignalBot:
                 " Restarting will delete the storage!"
             )
 
-    # deprecated
-    def listen(self, required_id: str, optional_id: str = None):
-        logging.warning(
-            "[Deprecation Warning] .listen is deprecated and will be removed in future versions. Please use .register"
-        )
-
-        # Case 1: required id is a phone number, optional_id is not being used
-        if self._is_phone_number(required_id):
-            phone_number = required_id
-            self._listenUser(phone_number)
-            return
-
-        # Case 2: required id is a group id
-        if self._is_group_id(required_id) and self._is_internal_id(optional_id):
-            group_id = required_id
-            internal_id = optional_id
-            self._listenGroup(group_id, internal_id)
-            return
-
-        # Case 3: optional_id is a group id (Case 2 swapped)
-        if self._is_internal_id(required_id) and self._is_group_id(optional_id):
-            group_id = optional_id
-            internal_id = required_id
-            self._listenGroup(group_id, internal_id)
-            return
-
-        logging.warning(
-            "[Bot] Can't listen for user/group because input does not look valid"
-        )
-
-    # deprecated
-    def listenUser(self, phone_number: str):
-        logging.warning(
-            "[Deprecation Warning] .listenUser is deprecated and will be removed in future versions. Please use .register"
-        )
-        return self._listenUser(phone_number)
-
-    # deprecated
-    def _listenUser(self, phone_number: str):
-        self._listen_mode_activated = True
-        if not self._is_phone_number(phone_number):
-            logging.warning(
-                "[Bot] Can't listen for user because phone number does not look valid"
-            )
-            return
-
-        self.user_chats.add(phone_number)
-
-    # deprecated
-    def listenGroup(self, group_id: str, internal_id: str = None):
-        logging.warning(
-            "[Deprecation Warning] .listenGroup is deprecated and will be removed in future versions. Please use .register"
-        )
-        return self._listenGroup(group_id, internal_id)
-
-    # deprecated
-    def _listenGroup(self, group_id: str, internal_id: str = None):
-        self._listen_mode_activated = True
-        if not (self._is_group_id(group_id) and self._is_internal_id(internal_id)):
-            logging.warning(
-                "[Bot] Can't listen for group because group id and "
-                "internal id do not look valid"
-            )
-            return
-
-        self.group_chats.add(internal_id)
-
     def register(
         self,
         command: Command,
@@ -177,19 +147,14 @@ class SignalBot:
             if isinstance(groups, bool):
                 group_ids = groups
 
-            if isinstance(groups, list):
-                group_ids = []
-                for group in groups:
-                    if self._is_group_id(group):  # group is a group id, higher prio
-                        group_ids.append(group)
-                    else:  # group is a group name
-                        matched_group = self._get_group_by_name(group)
-                        if matched_group is not None:
-                            group_ids.append(matched_group["id"])
-                        else:
-                            logging.warning(
-                                f"[Bot] [{command.__class__.__name__}] '{group}' is not a valid group name or id"
-                            )
+        if isinstance(groups, list):
+            group_ids = []
+            for group in groups:
+                if _is_group_id(group):  # group is a group id, higher prio
+                    group_ids.append(group)
+                else:  # group is a group name
+                    for matched_group in self._groups_by_name:
+                        group_ids.append(matched_group["id"])
 
             self.commands.append((command, contacts, group_ids, f))
 
@@ -331,16 +296,13 @@ class SignalBot:
         logging.info(f"[Bot] {len(self.groups)} groups detected")
 
     def _resolve_receiver(self, receiver: str) -> str:
-        if self._is_phone_number(receiver):
+        if _is_phone_number(receiver):
             return receiver
 
-        if self._is_valid_uuid(receiver):
+        if _is_valid_uuid(receiver):
             return receiver
 
-        if self._is_username(receiver):
-            return receiver
-
-        if self._is_group_id(receiver):
+        if _is_group_id(receiver):
             return receiver
 
         group = self._groups_by_internal_id.get(receiver)
@@ -478,10 +440,14 @@ class SignalBot:
                 logging.info(f"[Raw Message] {raw_message}")
 
                 try:
-                    message = await Message.parse(self._signal, raw_message)
+                    message = message_from_json(raw_message)
                 except UnknownMessageFormatError:
                     continue
 
+                if self._auto_download_attachments:
+                    for attachment in message.attachments:
+                        await attachment.download(self._signal)
+                
                 # Update groups if message is from an unknown group
                 if (
                     message.is_group()
@@ -502,16 +468,6 @@ class SignalBot:
         group_ids: Union[list[str], bool],
     ):
         """Is the command activated for a certain chat or group?"""
-
-        # Deprected Case: Listen Mode
-        if self._listen_mode_activated:
-            if message.is_private() and message.source in self.user_chats:
-                return True
-
-            if message.is_group() and message.group in self.group_chats:
-                return True
-
-            return False
 
         # Case 1: Private message
         if message.is_private():
