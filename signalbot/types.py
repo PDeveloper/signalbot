@@ -3,14 +3,15 @@ from .api import SignalAPI
 
 @dataclass
 class Attachment:
+    content_type: str
+    filename: str = None
     id: str
     size: int
-    contentType: str
     width: int
     height: int
-    uploadTimestamp: int
-    filename: str = None
     caption: str = None
+    upload_timestamp: int
+    thumbnail: 'Attachment' = None
 
     data: bytes = None
 
