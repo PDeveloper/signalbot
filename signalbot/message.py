@@ -3,11 +3,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
-from .types import Attachment
-
-class MessageType(Enum):
-    SYNC_MESSAGE = 1
-    DATA_MESSAGE = 2
+from .types import *
 
 def _parse_attachment(d:dict) -> Attachment:
     content_type = d.get('contentType')
@@ -53,61 +49,12 @@ def _parse_reaction(message: dict) -> str:
     except Exception:
         return None
 
-@dataclass
-class User:
-    name: str = None
-    number: str = None
-    uuid: str = None
-
-@dataclass
-class Message:
-    source: str
-    source_number: str
-    source_uuid: str
-    timestamp: int
-    type: MessageType
-    text: str
-    attachments: list[Attachment] = None
-    group: str = None
-    reaction: str = None
-    mentions: list = None
-    raw_message: dict = None
-
-    async def download_attachments(self) -> None:
-        await asyncio.gather([attachment.download() for attachment in self.attachments])
-
-    def recipient(self) -> str:
-        # Case 1: Group chat
-        if self.group:
-            return self.group  # internal ID
-
-        # Case 2: User chat
-        return self.source
-
-    def is_private(self) -> bool:
-        return not bool(self.group)
-
-    def is_group(self) -> bool:
-        return bool(self.group)
-
-    def __str__(self):
-        if self.text is None:
-            return ""
-        return self.text
-
-def parse_header(d:dict):
+def _parse_source(d:dict):
     return User(
         d.get('sourceName'),
         d.get('sourceNumber'),
         d.get('sourceUuid')
     )
-
-@dataclass
-class Quote:
-    source: User
-    timestamp: int
-    text: str = None
-    attachments: list[Attachment] = field(default_factory=list)
 
 def _parse_quote(d:dict):
     timestamp = int(d.get('id'))
@@ -118,13 +65,6 @@ def _parse_quote(d:dict):
     attachments = _parse_attachments(d.get('attachments', []))
     return Quote(source=User(name, number, uuid), timestamp=timestamp, text=text, attachments=attachments)
 
-@dataclass
-class Reaction:
-    emoji: str
-    target: User
-    timestamp: int
-    is_remove: bool
-
 def _parse_reaction(d:dict) -> Reaction:
     emoji = d.get('emoji')
     target_author = d.get('targetAuthor')
@@ -134,13 +74,6 @@ def _parse_reaction(d:dict) -> Reaction:
     is_remove = d.get('isRemove')
     return Reaction(emoji=emoji, target=User(target_author, target_author_number, target_author_uuid), timestamp=target_sent_timestamp, is_remove=is_remove)
 
-@dataclass
-class GroupInfo:
-    id: str
-    name: str
-    revision: int
-    type: str
-
 def _parse_group_info(d:dict):
     id = d.get('groupId')
     name = d.get('groupName')
@@ -148,64 +81,61 @@ def _parse_group_info(d:dict):
     type = d.get('type')
     return GroupInfo(id, name, revision, type)
 
-def parse_message(d:dict):
-    timestamp = d.get('timestamp')
-    message = d.get('message')
-    expires_in_seconds = d.get('expiresInSeconds', 0)
-    view_once = d.get('viewOnce', False)
-    attachments = _parse_attachments(d.get('attachments'), [])
-    reaction = _parse_reaction(d['reaction']) if d.get('reaction') else None
-    quote = _parse_quote(d['quote']) if d.get('quote') else None
-    group_info = _parse_group_info(d['groupInfo']) if d.get('groupInfo') else None
+def _parse_mention(d: dict):
+    start = int(d['start'])
+    length = int(d['length'])
+    return Mention(start=start, length=length, target=User(d['name'], d['number'], d['uuid']))
 
-def message_from_json(raw_message: str) -> Message:
-    try:
-        raw_message = json.loads(raw_message)
-    except Exception:
-        raise UnknownMessageFormatError
+def _parse_mentions(mentions: list):
+    return [_parse_mention(mention) for mention in mentions]
 
-    # General attributes
-    try:
-        source = raw_message["envelope"]["source"]
-        source_uuid = raw_message["envelope"]["sourceUuid"]
-        timestamp = raw_message["envelope"]["timestamp"]
-    except Exception:
-        raise UnknownMessageFormatError
-
-    source_number = raw_message["envelope"].get("sourceNumber")
-
-    # Option 1: syncMessage
-    if "syncMessage" in raw_message["envelope"]:
+def parse_envelope(data:dict):
+    envelope = data['envelope']
+    message_data:dict = None
+    if "syncMessage" in envelope:
         type = MessageType.SYNC_MESSAGE
-        if not "sentMessage" in raw_message["envelope"]["syncMessage"]:
-            raise UnknownMessageFormatError
-        message_data = raw_message["envelope"]["syncMessage"]["sentMessage"]
-    # Option 2: dataMessage
-    elif "dataMessage" in raw_message["envelope"]:
+        message_data = envelope["syncMessage"]["sentMessage"]
+    elif "dataMessage" in envelope:
         type = MessageType.DATA_MESSAGE
-        message_data = raw_message["envelope"]["dataMessage"]
-    else:
-        raise UnknownMessageFormatError
+        message_data = envelope["dataMessage"]
     
-    text = _parse_message(message_data)
-    group = _parse_group_information(message_data)
-    reaction = _parse_reaction(message_data)
-    mentions = _parse_mentions(message_data)
+    if not message_data:
+        return None
+
+    source = _parse_source(envelope)
+    timestamp = message_data.get('timestamp')
+    text = message_data.get('message')
+    expires_in_seconds = message_data.get('expiresInSeconds', 0)
+    view_once = message_data.get('viewOnce', False)
     attachments = _parse_attachments(message_data.get('attachments', []))
+    reaction = _parse_reaction(message_data['reaction']) if message_data.get('reaction') else None
+    quote = _parse_quote(message_data['quote']) if message_data.get('quote') else None
+    group_info = _parse_group_info(message_data['groupInfo']) if message_data.get('groupInfo') else None
+    mentions = _parse_mentions(message_data['mentions']) if message_data.get('mentions') else None
 
     return Message(
-        source=source,
-        source_number=source_number,
-        source_uuid=source_uuid,
-        timestamp=timestamp,
         type=type,
+        source=source,
+        timestamp=timestamp,
         text=text,
+        expires_in_seconds=expires_in_seconds,
+        view_once=view_once,
         attachments=attachments,
-        group=group,
         reaction=reaction,
+        quote=quote,
+        group_info=group_info,
         mentions=mentions,
-        raw_message=raw_message,
+
+        raw_message=data
     )
+
+def message_from_json(json_string: str) -> Message:
+    try:
+        data = json.loads(json_string)
+        return parse_envelope(data)
+    except Exception:
+        raise UnknownMessageFormatError
+    return None
 
 class UnknownMessageFormatError(Exception):
     pass

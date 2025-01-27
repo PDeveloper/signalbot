@@ -284,7 +284,7 @@ class SignalAPI:
             except HealthCheckError as e:
                 return False
     def _receive_ws_uri(self):
-        return f"ws://{self.signal_service}/v1/receive/{self.phone_number}?ignore_attachments=true"
+        return f"ws://{self.signal_service}/v1/receive/{self.phone_number}"
 
 
 class SignalAPIURIs:

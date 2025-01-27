@@ -441,17 +441,15 @@ class SignalBot:
 
                 try:
                     message = message_from_json(raw_message)
+                    if not message:
+                        continue
                 except UnknownMessageFormatError:
                     continue
-
-                if self._auto_download_attachments:
-                    for attachment in message.attachments:
-                        await attachment.download(self._signal)
                 
                 # Update groups if message is from an unknown group
                 if (
                     message.is_group()
-                    and self._groups_by_internal_id.get(message.group) is None
+                    and self._groups_by_internal_id.get(message.group_info.id) is None
                 ):
                     await self._detect_groups()
 
@@ -486,7 +484,7 @@ class SignalBot:
                 return True
 
             # b) whitelisted group ids
-            group_id = self._groups_by_internal_id.get(message.group, {}).get("id")
+            group_id = self._groups_by_internal_id.get(message.group_info.id, {}).get("id")
             if isinstance(group_ids, list) and group_id and group_id in group_ids:
                 return True
 
