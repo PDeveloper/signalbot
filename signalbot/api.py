@@ -227,7 +227,7 @@ class SignalAPI:
         return f"http://{self.signal_service}/v1/attachments"
 
     def _receive_ws_uri(self):
-        return f"ws://{self.signal_service}/v1/receive/{self.phone_number}?ignore_attachments=true"
+        return f"ws://{self.signal_service}/v1/receive/{self.phone_number}"
 
     def _send_rest_uri(self):
         return f"http://{self.signal_service}/v2/send"
