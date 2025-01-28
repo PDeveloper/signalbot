@@ -78,8 +78,8 @@ class SignalBot:
         self._auto_download_attachments = self.config.get("auto_download_attachments", True)
 
         try:
-            self._phone_number = self.config["phone_number"]
-            self._signal_service = self.config["signal_service"]
+            self._phone_number = str(self.config["phone_number"])
+            self._signal_service = str(self.config["signal_service"])
             self._signal = SignalAPI(self._signal_service, self._phone_number)
         except KeyError:
             raise SignalBotError("Could not initialize SignalAPI with given config")
@@ -182,8 +182,14 @@ class SignalBot:
         # TODO: check that emoji is really an emoji
         recipient = message.recipient()
         recipient = self._resolve_receiver(recipient)
-        target_author = message.source
+        target_author = message.source.uuid
         timestamp = message.timestamp
+        await self._signal.react(recipient, emoji, target_author, timestamp)
+        logging.info(f"[Bot] New reaction: {emoji}")
+
+    async def react2(self, recipient: str, target_author: str, timestamp: int, emoji: str):
+        # TODO: check that emoji is really an emoji
+        recipient = self._resolve_receiver(recipient)
         await self._signal.react(recipient, emoji, target_author, timestamp)
         logging.info(f"[Bot] New reaction: {emoji}")
 
@@ -395,6 +401,8 @@ class SignalBot:
         # done
         self._q.task_done()
 
+    def phone_number(self)->str:
+        return self._phone_number
 
 class SignalBotError(Exception):
     pass

@@ -3,8 +3,8 @@ from enum import Enum
 
 @dataclass
 class User:
-    name: str = None
-    number: str = None
+    name: str = field(compare=False, default=None)
+    number: str = field(compare=False, default=None)
     uuid: str = None
 
 @dataclass
@@ -41,9 +41,9 @@ class Reaction:
 @dataclass
 class GroupInfo:
     id: str
-    name: str
-    revision: int
-    type: str
+    name: str = field(compare=False)
+    revision: int = field(compare=False)
+    type: str = field(compare=False)
 
 @dataclass
 class Mention:

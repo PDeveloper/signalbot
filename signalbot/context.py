@@ -28,7 +28,7 @@ class Context:
         text: str,
         base64_attachments: list = None,
         mentions: (
-            list[dict[str, Any]] | None
+            list[dict[str, dict]] | None
         ) = None,  # [{ "author": "uuid" , "start": 0, "length": 1 }]
         text_mode: str = None,
     ):
@@ -36,8 +36,8 @@ class Context:
             self.message.recipient(),
             text,
             base64_attachments=base64_attachments,
-            quote_author=self.message.source,
-            quote_mentions=self.message.mentions,
+            quote_author=self.message.source.uuid,
+            quote_mentions=[{ "author": mention.target.uuid , "start": mention.start, "length": mention.length } for mention in self.message.mentions],
             quote_message=self.message.text,
             quote_timestamp=self.message.timestamp,
             mentions=mentions,
