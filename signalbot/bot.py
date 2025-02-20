@@ -229,6 +229,9 @@ class SignalBot:
             name=name,
         )
 
+    def group_id_from_internal_id(self, internal_id: str) -> str:
+        return self._groups_by_internal_id.get(internal_id, {}).get("id")
+
     async def _detect_groups(self):
         # reset group lookups to avoid stale data
         self.groups = await self._signal.get_groups()
