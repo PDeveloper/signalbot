@@ -1,15 +1,40 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING, Optional
 import functools
+import re
 from abc import ABC, abstractmethod
+
 
 from .message import Message
 from .context import Context
 
+if TYPE_CHECKING:
+    from .bot import SignalBot
 
-def triggered(*by, case_sensitive=False):
+
+def regex_triggered(*by: str | re.Pattern[str]):
+    def decorator_regex_triggered(func):
+        @functools.wraps(func)
+        async def wrapper_regex_triggered(*args, **kwargs):
+            c: Context = args[1]
+            text = c.message.text
+            if not isinstance(text, str):
+                return
+            matches = [bool(re.search(pattern, text)) for pattern in by]
+            if True not in matches:
+                return
+            return await func(*args, **kwargs)
+
+        return wrapper_regex_triggered
+
+    return decorator_regex_triggered
+
+
+def triggered(*by: str, case_sensitive=False):
     def decorator_triggered(func):
         @functools.wraps(func)
         async def wrapper_triggered(*args, **kwargs):
-            c = args[1]
+            c: Context = args[1]
             text = c.message.text
             if not isinstance(text, str):
                 return
@@ -29,6 +54,9 @@ def triggered(*by, case_sensitive=False):
 
 
 class Command(ABC):
+    def __init__(self):
+        self.bot: Optional[SignalBot] = None  # Available after calling bot.register()
+
     # optional
     def setup(self):
         pass

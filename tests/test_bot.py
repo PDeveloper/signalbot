@@ -53,6 +53,7 @@ class TestProducer(BotTestCase):
         # Any two commands
         self.signal_bot.register(DummyCommand())
         self.signal_bot.register(DummyCommand())
+        await self.signal_bot._resolve_commands()
 
         await self.signal_bot._produce(1337)
 
@@ -106,23 +107,55 @@ class TestListenUser(BotTestCase):
 
     def test_listen_valid_invalid_phone_number(self):
         invalid_number = "49987654321"
-        valid_number = "+49123454321"
+        valid_number = "+49303454321"
         self.signal_bot.listen(invalid_number)
         self.signal_bot.listen(valid_number)
         expected_user_chats = {valid_number}
         self.assertSetEqual(self.signal_bot.user_chats, expected_user_chats)
 
 
+class TestUsernameValidation(BotTestCase):
+    def test_valid_username(self):
+        valid_usernames = [
+            "Usr.99",
+            "UserName.99",
+            "username.999999999",
+            "UserName99.99",
+            "_Use_rName99_.99",
+            "usernameeeeeeeeeeeeeeeeeeeeeeeee.999999999",
+        ]
+        for valid_username in valid_usernames:
+            self.assertTrue(self.signal_bot._is_username(valid_username))
+
+    def test_invalid_username(self):
+        invalid_usernames = [
+            "Us.99",
+            "Usr.9",
+            ".UserName99",
+            ".UserName.99",
+            "UserName99",
+            "UserName99.",
+            "username.9999999999",
+            "user@name.999",
+            "UserName99.0",
+            "UserName99.00",
+            "UserName99.000000000",
+            ".usernameeeeeeeeeeeeeeeeeeeeeeeeee.99",
+        ]
+        for invalid_username in invalid_usernames:
+            self.assertFalse(self.signal_bot._is_username(invalid_username))
+
+
 class TestRegisterCommand(BotTestCase):
     def test_register_one_command(self):
         self.signal_bot.register(DummyCommand())
-        self.assertEqual(len(self.signal_bot.commands), 1)
+        self.assertEqual(len(self.signal_bot._commands_to_be_registered), 1)
 
     def test_register_three_commands(self):
         self.signal_bot.register(DummyCommand())
         self.signal_bot.register(DummyCommand())
         self.signal_bot.register(DummyCommand())
-        self.assertEqual(len(self.signal_bot.commands), 3)
+        self.assertEqual(len(self.signal_bot._commands_to_be_registered), 3)
 
     def test_register_calls_setup_of_command(self):
         class SomeTestCommand(Command):

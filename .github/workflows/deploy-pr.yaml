@@ -69,17 +69,17 @@ jobs:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ fromJson(steps.get_pull_request_ref.outputs.data).head.ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: 3.13.1
 
       - name: Install Poetry
-        uses: abatilo/actions-poetry@v2.0.0
+        uses: abatilo/actions-poetry@v4
         with:
           poetry-version: 1.8.4
 
@@ -88,7 +88,7 @@ jobs:
 
       - name: Create custom version
         id: create-custom-version
-        run: echo "::set-output name=pr_version::$(poetry version -s)a$(date +%s)"
+        run: echo "{pr_version}=$(poetry version -s)a$(date +%s)" >> $GITHUB_OUTPUT
 
       - name: Set new version
         run: poetry version ${{ steps.create-custom-version.outputs.pr_version }}
@@ -105,7 +105,7 @@ jobs:
         run: poetry publish -r testpypi
 
       - name: Write comment in Pull Request
-        uses: peter-evans/create-or-update-comment@v1
+        uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.issue.number }}
           body: |
