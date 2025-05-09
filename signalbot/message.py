@@ -1,207 +1,143 @@
+import asyncio
 import json
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+from .types import *
 
+def _parse_attachment(d:dict) -> Attachment:
+    content_type = d.get('contentType')
+    filename = d.get('filename')
+    id = d.get('id')
+    size = int(d['size']) if d.get('size') else None
+    width = int(d['width']) if d.get('width') else None
+    height = int(d['height']) if d.get('height') else None
+    caption = d.get('caption')
+    upload_timestamp = int(d['uploadTimestamp']) if d.get('uploadTimestamp') else None
+    thumbnail = _parse_attachment(d['thumbnail']) if d.get('thumbnail') else None
+    return Attachment(content_type=content_type, filename=filename,id=id, size=size, width=width, height=height,
+                      upload_timestamp=upload_timestamp, caption=caption, thumbnail=thumbnail)
 
-from signalbot.api import SignalAPI
+def _parse_attachments(attachments: list) -> list:
+    return [_parse_attachment(attachment) for attachment in attachments]
 
+def _parse_message(data_message: dict) -> str:
+    try:
+        text = data_message["message"]
+        return text
+    except Exception:
+        raise UnknownMessageFormatError
 
-class MessageType(Enum):
-    SYNC_MESSAGE = 1
-    DATA_MESSAGE = 2
+def _parse_group_information(message: dict) -> str:
+    try:
+        group = message["groupInfo"]["groupId"]
+        return group
+    except Exception:
+        return None
 
+def _parse_mentions(data_message: dict) -> list:
+    try:
+        mentions = data_message["mentions"]
+        return mentions
+    except Exception:
+        return []
 
-class Message:
-    def __init__(
-        self,
-        source: str,
-        source_number: Optional[str],
-        source_uuid: str,
-        timestamp: int,
-        type: MessageType,
-        text: str,
-        base64_attachments: list = None,
-        attachments_local_filenames: Optional[list] = None,
-        group: str = None,
-        reaction: str = None,
-        mentions: list = None,
-        raw_message: str = None,
-    ):
-        # required
-        self.source = source
-        self.source_number = source_number
-        self.source_uuid = source_uuid
-        self.timestamp = timestamp
-        self.type = type
-        self.text = text
+def _parse_reaction(message: dict) -> str:
+    try:
+        reaction = message["reaction"]["emoji"]
+        return reaction
+    except Exception:
+        return None
 
-        # optional
-        self.base64_attachments = base64_attachments
-        if self.base64_attachments is None:
-            self.base64_attachments = []
+def _parse_source(d:dict):
+    return User(
+        d.get('sourceName'),
+        d.get('sourceNumber'),
+        d.get('sourceUuid')
+    )
 
-        self.attachments_local_filenames = attachments_local_filenames
-        if self.attachments_local_filenames is None:
-            self.attachments_local_filenames = []
+def _parse_quote(d:dict):
+    timestamp = int(d.get('id'))
+    name = d.get('author', None)
+    number = d.get('authorNumber', None)
+    uuid = d.get('authorUuid', None)
+    text = d.get('text')
+    attachments = _parse_attachments(d.get('attachments', []))
+    return Quote(source=User(name, number, uuid), timestamp=timestamp, text=text, attachments=attachments)
 
-        self.group = group
+def _parse_reaction(d:dict) -> Reaction:
+    emoji = d.get('emoji')
+    target_author = d.get('targetAuthor')
+    target_author_number = d.get('targetAuthorNumber')
+    target_author_uuid = d.get('targetAuthorUuid')
+    target_sent_timestamp = d.get('targetSentTimestamp')
+    is_remove = d.get('isRemove')
+    return Reaction(emoji=emoji, target=User(target_author, target_author_number, target_author_uuid), timestamp=target_sent_timestamp, is_remove=is_remove)
 
-        self.reaction = reaction
+def _parse_group_info(d:dict):
+    id = d.get('groupId')
+    name = d.get('groupName')
+    revision = int(d.get('revision'))
+    type = d.get('type')
+    return GroupInfo(id, name, revision, type)
 
-        self.mentions = mentions
-        if self.mentions is None:
-            self.mentions = []
+def _parse_mention(d: dict):
+    start = int(d['start'])
+    length = int(d['length'])
+    return Mention(start=start, length=length, target=User(d['name'], d['number'], d['uuid']))
 
-        self.raw_message = raw_message
+def _parse_mentions(mentions: list):
+    return [_parse_mention(mention) for mention in mentions]
 
-    def recipient(self) -> str:
-        # Case 1: Group chat
-        if self.group:
-            return self.group  # internal ID
+def parse_envelope(data:dict):
+    envelope = data['envelope']
+    message_data:dict = None
+    if "syncMessage" in envelope:
+        type = MessageType.SYNC_MESSAGE
+        message_data = envelope["syncMessage"]["sentMessage"]
+    elif "dataMessage" in envelope:
+        type = MessageType.DATA_MESSAGE
+        message_data = envelope["dataMessage"]
+    elif "receiptMessage" in envelope:
+        type = MessageType.RECEIPT_MESSAGE
+    
+    if not message_data:
+        return None
 
-        # Case 2: User chat
-        return self.source
+    source = _parse_source(envelope)
+    timestamp = message_data.get('timestamp')
+    text = message_data.get('message')
+    expires_in_seconds = message_data.get('expiresInSeconds', 0)
+    view_once = message_data.get('viewOnce', False)
+    attachments = _parse_attachments(message_data.get('attachments', []))
+    reaction = _parse_reaction(message_data['reaction']) if message_data.get('reaction') else None
+    quote = _parse_quote(message_data['quote']) if message_data.get('quote') else None
+    group_info = _parse_group_info(message_data['groupInfo']) if message_data.get('groupInfo') else None
+    mentions = _parse_mentions(message_data['mentions']) if message_data.get('mentions') else None
 
-    def is_private(self) -> bool:
-        return not bool(self.group)
+    return Message(
+        type=type,
+        source=source,
+        timestamp=timestamp,
+        text=text,
+        expires_in_seconds=expires_in_seconds,
+        view_once=view_once,
+        attachments=attachments,
+        reaction=reaction,
+        quote=quote,
+        group_info=group_info,
+        mentions=mentions,
 
-    def is_group(self) -> bool:
-        return bool(self.group)
+        raw_message=data
+    )
 
-    @classmethod
-    async def parse(cls, signal: SignalAPI, raw_message_str: str):
-        try:
-            raw_message = json.loads(raw_message_str)
-        except Exception:
-            raise UnknownMessageFormatError
-
-        # General attributes
-        try:
-            source = raw_message["envelope"]["source"]
-            source_uuid = raw_message["envelope"]["sourceUuid"]
-            timestamp = raw_message["envelope"]["timestamp"]
-        except Exception:
-            raise UnknownMessageFormatError
-
-        source_number = raw_message["envelope"].get("sourceNumber")
-
-        # Option 1: syncMessage
-        if "syncMessage" in raw_message["envelope"]:
-            type = MessageType.SYNC_MESSAGE
-            text = cls._parse_sync_message(raw_message["envelope"]["syncMessage"])
-            group = cls._parse_group_information(
-                raw_message["envelope"]["syncMessage"]["sentMessage"]
-            )
-            reaction = cls._parse_reaction(
-                raw_message["envelope"]["syncMessage"]["sentMessage"]
-            )
-            mentions = cls._parse_mentions(
-                raw_message["envelope"]["syncMessage"]["sentMessage"]
-            )
-            base64_attachments = await cls._parse_attachments(
-                signal, raw_message["envelope"]["syncMessage"]["sentMessage"]
-            )
-            attachments_local_filenames = cls._parse_attachments_local_filenames(
-                raw_message["envelope"]["syncMessage"]["sentMessage"]
-            )
-
-        # Option 2: dataMessage
-        elif "dataMessage" in raw_message["envelope"]:
-            type = MessageType.DATA_MESSAGE
-            text = cls._parse_data_message(raw_message["envelope"]["dataMessage"])
-            group = cls._parse_group_information(raw_message["envelope"]["dataMessage"])
-            reaction = cls._parse_reaction(raw_message["envelope"]["dataMessage"])
-            mentions = cls._parse_mentions(raw_message["envelope"]["dataMessage"])
-            base64_attachments = await cls._parse_attachments(
-                signal, raw_message["envelope"]["dataMessage"]
-            )
-            attachments_local_filenames = cls._parse_attachments_local_filenames(
-                raw_message["envelope"]["dataMessage"]
-            )
-
-        else:
-            raise UnknownMessageFormatError
-
-        return cls(
-            source,
-            source_number,
-            source_uuid,
-            timestamp,
-            type,
-            text,
-            base64_attachments,
-            attachments_local_filenames,
-            group,
-            reaction,
-            mentions,
-            raw_message_str,
-        )
-
-    @classmethod
-    async def _parse_attachments(cls, signal: SignalAPI, data_message: dict) -> str:
-
-        if "attachments" not in data_message:
-            return []
-
-        return [
-            await signal.get_attachment(attachment["id"])
-            for attachment in data_message["attachments"]
-        ]
-
-    @classmethod
-    def _parse_attachments_local_filenames(cls, data_message: dict) -> list[str]:
-
-        if "attachments" not in data_message:
-            return []
-
-        # The ["id"] is the local filename and the ["filename"] is the remote filename
-        return [attachment["id"] for attachment in data_message["attachments"]]
-
-    @classmethod
-    def _parse_sync_message(cls, sync_message: dict) -> str:
-        try:
-            text = sync_message["sentMessage"]["message"]
-            return text
-        except Exception:
-            raise UnknownMessageFormatError
-
-    @classmethod
-    def _parse_data_message(cls, data_message: dict) -> str:
-        try:
-            text = data_message["message"]
-            return text
-        except Exception:
-            raise UnknownMessageFormatError
-
-    @classmethod
-    def _parse_group_information(self, message: dict) -> str:
-        try:
-            group = message["groupInfo"]["groupId"]
-            return group
-        except Exception:
-            return None
-
-    @classmethod
-    def _parse_mentions(cls, data_message: dict) -> list:
-        try:
-            mentions = data_message["mentions"]
-            return mentions
-        except Exception:
-            return []
-
-    @classmethod
-    def _parse_reaction(self, message: dict) -> str:
-        try:
-            reaction = message["reaction"]["emoji"]
-            return reaction
-        except Exception:
-            return None
-
-    def __str__(self):
-        if self.text is None:
-            return ""
-        return self.text
-
+def message_from_json(json_string: str) -> Message:
+    try:
+        data = json.loads(json_string)
+        return parse_envelope(data)
+    except Exception:
+        raise UnknownMessageFormatError
+    return None
 
 class UnknownMessageFormatError(Exception):
     pass
