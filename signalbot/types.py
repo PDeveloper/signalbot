@@ -23,6 +23,7 @@ class Attachment:
 class MessageType(Enum):
     SYNC_MESSAGE = 1
     DATA_MESSAGE = 2
+    RECEIPT_MESSAGE = 3
 
 @dataclass
 class Quote:

@@ -98,6 +98,8 @@ def parse_envelope(data:dict):
     elif "dataMessage" in envelope:
         type = MessageType.DATA_MESSAGE
         message_data = envelope["dataMessage"]
+    elif "receiptMessage" in envelope:
+        type = MessageType.RECEIPT_MESSAGE
     
     if not message_data:
         return None
