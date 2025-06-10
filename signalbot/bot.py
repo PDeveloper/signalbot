@@ -7,8 +7,6 @@ import traceback
 from typing import Optional, Union, List, Callable, Any, TypeAlias, Literal
 import re
 import uuid
-import phonenumbers
-import itertools
 
 from .api import SignalAPI, ReceiveMessagesError
 from .command import Command
@@ -55,6 +53,32 @@ def _is_group_id(group_id: str) -> bool:
 
     return re.match(r"^group\.[a-zA-Z0-9]{59}=$", group_id)
 
+def _is_username(receiver_username: str) -> bool:
+    """
+    Check if username has correct format, as described in
+    https://support.signal.org/hc/en-us/articles/6712070553754-Phone-Number-Privacy-and-Usernames#username_req
+    Additionally, cannot have more than 9 digits and the digits cannot be 00.
+    """
+    split_username = receiver_username.split(".")
+    if len(split_username) == 2:
+        characters = split_username[0]
+        digits = split_username[1]
+        if len(characters) < 3 or len(characters) > 32:
+            return False
+        if not re.match(r"^[A-Za-z\d_]+$", characters):
+            return False
+        if len(digits) < 2 or len(digits) > 9:
+            return False
+        try:
+            digits = int(digits)
+            if digits == 0:
+                return False
+            return True
+        except ValueError:
+            return False
+    else:
+        return False
+    
 def _is_internal_id(internal_id: str) -> bool:
     if internal_id is None:
         return False
@@ -309,6 +333,9 @@ class SignalBot:
         if _is_valid_uuid(receiver):
             return receiver
 
+        if _is_username(receiver):
+            return receiver
+
         if _is_group_id(receiver):
             return receiver
 
@@ -321,65 +348,6 @@ class SignalBot:
             return group["id"]
 
         raise SignalBotError(f"Cannot resolve receiver.")
-
-    def _is_phone_number(self, phone_number: str) -> bool:
-        try:
-            parsed_number = phonenumbers.parse(phone_number, region=None)
-            return phonenumbers.is_valid_number(parsed_number)
-        except phonenumbers.phonenumberutil.NumberParseException:
-            return False
-
-    def _is_valid_uuid(self, receiver_uuid: str):
-        try:
-            uuid.UUID(str(receiver_uuid))
-            return True
-        except ValueError:
-            return False
-
-    def _is_username(self, receiver_username: str) -> bool:
-        """
-        Check if username has correct format, as described in
-        https://support.signal.org/hc/en-us/articles/6712070553754-Phone-Number-Privacy-and-Usernames#username_req
-        Additionally, cannot have more than 9 digits and the digits cannot be 00.
-        """
-        split_username = receiver_username.split(".")
-        if len(split_username) == 2:
-            characters = split_username[0]
-            digits = split_username[1]
-            if len(characters) < 3 or len(characters) > 32:
-                return False
-            if not re.match(r"^[A-Za-z\d_]+$", characters):
-                return False
-            if len(digits) < 2 or len(digits) > 9:
-                return False
-            try:
-                digits = int(digits)
-                if digits == 0:
-                    return False
-                return True
-            except ValueError:
-                return False
-        else:
-            return False
-
-    def _is_group_id(self, group_id: str) -> bool:
-        """Check if group_id has the right format, e.g.
-
-              random string                                              length 66
-              ↓                                                          ↓
-        group.OyZzqio1xDmYiLsQ1VsqRcUFOU4tK2TcECmYt2KeozHJwglMBHAPS7jlkrm=
-        ↑                                                                ↑
-        prefix                                                           suffix
-        """
-        if group_id is None:
-            return False
-
-        return re.match(r"^group\.[a-zA-Z0-9]{59}=$", group_id)
-
-    def _is_internal_id(self, internal_id: str) -> bool:
-        if internal_id is None:
-            return False
-        return internal_id[-1] == "="
 
     def _get_group_by_name(self, group_name: str) -> Optional[dict[str, Any]]:
         groups = self._groups_by_name.get(group_name)
