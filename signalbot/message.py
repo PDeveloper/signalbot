@@ -1,8 +1,4 @@
-import asyncio
 import json
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
 from .types import *
 
 def _parse_attachment(d:dict) -> Attachment:
@@ -20,20 +16,6 @@ def _parse_attachment(d:dict) -> Attachment:
 
 def _parse_attachments(attachments: list) -> list:
     return [_parse_attachment(attachment) for attachment in attachments]
-
-def _parse_message(data_message: dict) -> str:
-    try:
-        text = data_message["message"]
-        return text
-    except Exception:
-        raise UnknownMessageFormatError
-
-def _parse_group_information(message: dict) -> str:
-    try:
-        group = message["groupInfo"]["groupId"]
-        return group
-    except Exception:
-        return None
 
 def _parse_mentions(data_message: dict) -> list:
     try:

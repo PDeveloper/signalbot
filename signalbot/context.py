@@ -7,7 +7,6 @@ from .message import Message
 if TYPE_CHECKING:
     from .bot import SignalBot
 
-
 class Context:
     def __init__(self, bot: SignalBot, message: Message):
         self.bot = bot

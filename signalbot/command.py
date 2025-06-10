@@ -4,13 +4,11 @@ import functools
 import re
 from abc import ABC, abstractmethod
 
-
 from .message import Message
 from .context import Context
 
 if TYPE_CHECKING:
     from .bot import SignalBot
-
 
 def regex_triggered(*by: str | re.Pattern[str]):
     def decorator_regex_triggered(func):

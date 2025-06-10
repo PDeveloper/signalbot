@@ -7,11 +7,11 @@ import traceback
 from typing import Optional, Union, List, Callable, Any, TypeAlias, Literal
 import re
 import uuid
+import itertools
 
 from .api import SignalAPI, ReceiveMessagesError
 from .command import Command
 from .message import Message, UnknownMessageFormatError, message_from_json
-from .storage import RedisStorage, SQLiteStorage
 from .context import Context
 
 CommandList: TypeAlias = list[
@@ -134,23 +134,6 @@ class SignalBot:
             self.scheduler = AsyncIOScheduler(event_loop=self._event_loop)
         except Exception as e:
             raise SignalBotError(f"Could not initialize scheduler: {e}")
-
-        try:
-            config_storage = self.config["storage"]
-            if config_storage.get("type") == "sqlite":
-                self._sqlite_db = config_storage["sqlite_db"]
-                self.storage = SQLiteStorage(self._sqlite_db)
-            else:
-                self._redis_host = config_storage["redis_host"]
-                self._redis_port = config_storage["redis_port"]
-                self.storage = RedisStorage(self._redis_host, self._redis_port)
-        except Exception:
-            self.storage = SQLiteStorage()
-            logging.warning(
-                "[Bot] Could not initialize Redis and no SQLite DB name was given."
-                " In-memory storage will be used."
-                " Restarting will delete the storage!"
-            )
 
     def register(
         self,

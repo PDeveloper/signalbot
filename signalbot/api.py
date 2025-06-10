@@ -5,7 +5,6 @@ import websockets
 from typing import Any, Optional
 from typing import Literal
 
-
 class SignalAPI:
     def __init__(
         self,
