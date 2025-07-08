@@ -150,20 +150,20 @@ class SignalBot:
         self.commands = []
         for command, contacts, groups, f in self._commands_to_be_registered:
             group_ids = None
-
+            
             if isinstance(groups, bool):
                 group_ids = groups
 
-        if isinstance(groups, list):
-            group_ids = []
-            for group in groups:
-                if _is_group_id(group):  # group is a group id, higher prio
-                    group_ids.append(group)
-                else:  # group is a group name
-                    for matched_group in self._groups_by_name:
-                        group_ids.append(matched_group["id"])
+            if isinstance(groups, list):
+                group_ids = []
+                for group in groups:
+                    if _is_group_id(group):  # group is a group id, higher prio
+                        group_ids.append(group)
+                    else:  # group is a group name
+                        for matched_group in self._groups_by_name:
+                            group_ids.append(matched_group["id"])
 
-            self.commands.append((command, contacts, group_ids, f))
+                self.commands.append((command, contacts, group_ids, f))
 
     async def _async_post_init(self):
         await self._check_signal_service()
