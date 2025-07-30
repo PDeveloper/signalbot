@@ -84,6 +84,40 @@ def _is_internal_id(internal_id: str) -> bool:
         return False
     return internal_id[-1] == "="
 
+# see https://stackoverflow.com/questions/55184226/catching-exceptions-in-individual-tasks-and-restarting-them
+async def _rerun_on_exception(coro, *args, **kwargs):
+    """Restart coroutine by waiting an exponential time deplay"""
+    max_sleep = 5 * 60  # sleep for at most 5 mins until rerun
+    reset = 3 * 60  # reset after 3 minutes running successfully
+    init_sleep = 1  # always start with sleeping for 1 second
+
+    next_sleep = init_sleep
+    while True:
+        start_t = int(time.monotonic())  # seconds
+
+        try:
+            return await coro(*args, **kwargs)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            traceback.print_exc()
+
+        end_t = int(time.monotonic())  # seconds
+
+        if end_t - start_t < reset:
+            sleep_t = next_sleep
+            next_sleep = min(max_sleep, next_sleep * 2)  # double sleep time
+        else:
+            next_sleep = init_sleep  # reset sleep time
+            sleep_t = next_sleep
+
+        logging.warning(f"Restarting coroutine in {sleep_t} seconds")
+        await asyncio.sleep(sleep_t)
+
+def _store_reference_to_task(task: asyncio.Task, task_set: set[asyncio.Task]):
+    task_set.add(task)
+    task.add_done_callback(task_set.discard)
+
 class SignalBot:
     def __init__(self, config: dict):
         """SignalBot
@@ -176,16 +210,11 @@ class SignalBot:
             logging.error("Cannot connect to the signal-cli-rest-api service, retrying")
             await asyncio.sleep(self.config.get("retry_interval", 1))
 
-    def _store_reference_to_task(self, task: asyncio.Task, task_set: set[asyncio.Task]):
-        # Keep a hard reference to the tasks, fixes Ruff's RUF006 rule
-        task_set.add(task)
-        task.add_done_callback(task_set.discard)
-
     def start(self):
         task = self._event_loop.create_task(
-            self._rerun_on_exception(self._async_post_init)
+            _rerun_on_exception(self._async_post_init)
         )
-        self._store_reference_to_task(task, self._running_tasks)
+        _store_reference_to_task(task, self._running_tasks)
 
         # Add more scheduler tasks here
         # self.scheduler.add_job(...)
@@ -247,6 +276,7 @@ class SignalBot:
         recipient = self._resolve_receiver(message.recipient())
         await self._signal.receipt(recipient, receipt_type, message.timestamp)
         logging.info(f"[Bot] Receipt: {receipt_type}")
+    
     async def react2(self, recipient: str, target_author: str, timestamp: int, emoji: str):
         # TODO: check that emoji is really an emoji
         recipient = self._resolve_receiver(recipient)
@@ -292,6 +322,7 @@ class SignalBot:
     async def delete_attachment(self, attachment_filename: str) -> None:
         # Delete the attachment from the local storage
         await self._signal.delete_attachment(attachment_filename)
+    
     def group_id_from_internal_id(self, internal_id: str) -> str:
         return self._groups_by_internal_id.get(internal_id, {}).get("id")
 
@@ -342,37 +373,6 @@ class SignalBot:
             return groups[0]
         return None
 
-    # see https://stackoverflow.com/questions/55184226/catching-exceptions-in-individual-tasks-and-restarting-them
-    @classmethod
-    async def _rerun_on_exception(cls, coro, *args, **kwargs):
-        """Restart coroutine by waiting an exponential time deplay"""
-        max_sleep = 5 * 60  # sleep for at most 5 mins until rerun
-        reset = 3 * 60  # reset after 3 minutes running successfully
-        init_sleep = 1  # always start with sleeping for 1 second
-
-        next_sleep = init_sleep
-        while True:
-            start_t = int(time.monotonic())  # seconds
-
-            try:
-                return await coro(*args, **kwargs)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                traceback.print_exc()
-
-            end_t = int(time.monotonic())  # seconds
-
-            if end_t - start_t < reset:
-                sleep_t = next_sleep
-                next_sleep = min(max_sleep, next_sleep * 2)  # double sleep time
-            else:
-                next_sleep = init_sleep  # reset sleep time
-                sleep_t = next_sleep
-
-            logging.warning(f"Restarting coroutine in {sleep_t} seconds")
-            await asyncio.sleep(sleep_t)
-
     async def _produce_consume_messages(self, producers=1, consumers=3) -> None:
         for task in itertools.chain(self._consume_tasks, self._produce_tasks):
             task.cancel()
@@ -380,16 +380,16 @@ class SignalBot:
         self._produce_tasks.clear()
 
         for n in range(1, producers + 1):
-            produce_task = self._rerun_on_exception(self._produce, n)
+            produce_task = _rerun_on_exception(self._produce, n)
             produce_task = asyncio.create_task(produce_task)
-            self._store_reference_to_task(produce_task, self._produce_tasks)
+            _store_reference_to_task(produce_task, self._produce_tasks)
 
         self._consume_tasks.clear()
 
         for n in range(1, consumers + 1):
-            consume_task = self._rerun_on_exception(self._consume, n)
+            consume_task = _rerun_on_exception(self._consume, n)
             consume_task = asyncio.create_task(consume_task)
-            self._store_reference_to_task(consume_task, self._consume_tasks)
+            _store_reference_to_task(consume_task, self._consume_tasks)
 
     async def _produce(self, name: int) -> None:
         logging.info(f"[Bot] Producer #{name} started")
