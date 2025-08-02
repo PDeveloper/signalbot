@@ -1,7 +1,6 @@
 import asyncio
 from collections import defaultdict
 import time
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import logging
 import traceback
 from typing import Optional, Union, List, Callable, Any, TypeAlias, Literal
@@ -164,11 +163,6 @@ class SignalBot:
         self._produce_tasks: set[asyncio.Task] = set()
         self._consume_tasks: set[asyncio.Task] = set()
 
-        try:
-            self.scheduler = AsyncIOScheduler(event_loop=self._event_loop)
-        except Exception as e:
-            raise SignalBotError(f"Could not initialize scheduler: {e}")
-
     def register(
         self,
         command: Command,
@@ -197,13 +191,15 @@ class SignalBot:
                         for matched_group in self._groups_by_name:
                             group_ids.append(matched_group["id"])
 
-                self.commands.append((command, contacts, group_ids, f))
+            self.commands.append((command, contacts, group_ids, f))
 
     async def _async_post_init(self):
         await self._check_signal_service()
         await self._detect_groups()
         await self._resolve_commands()
         await self._produce_consume_messages()
+        
+        await asyncio.gather(*self._running_tasks, *self._produce_tasks, *self._consume_tasks)
 
     async def _check_signal_service(self):
         while (await self._signal.check_signal_service()) is False:
@@ -211,17 +207,7 @@ class SignalBot:
             await asyncio.sleep(self.config.get("retry_interval", 1))
 
     def start(self):
-        task = self._event_loop.create_task(
-            _rerun_on_exception(self._async_post_init)
-        )
-        _store_reference_to_task(task, self._running_tasks)
-
-        # Add more scheduler tasks here
-        # self.scheduler.add_job(...)
-        self.scheduler.start()
-
-        # Run event loop
-        self._event_loop.run_forever()
+        return _rerun_on_exception(self._async_post_init)
 
     async def send(
         self,
@@ -236,7 +222,6 @@ class SignalBot:
             list[dict[str, Any]] | None
         ) = None,  # [{ "author": "uuid" , "start": 0, "length": 1 }]
         text_mode: str = None,
-        listen: bool = False,
     ) -> str:
         receiver = self._resolve_receiver(receiver)
         resp = await self._signal.send(
@@ -253,9 +238,6 @@ class SignalBot:
         resp_payload = await resp.json()
         timestamp = resp_payload["timestamp"]
         logging.info(f"[Bot] New message {timestamp} sent:\n{text}")
-
-        if listen:
-            logging.warning(f"[Bot] send(..., listen=True) is not supported anymore")
 
         return timestamp
 
@@ -401,13 +383,14 @@ class SignalBot:
                     message = message_from_json(raw_message)
                     if not message:
                         continue
-                except UnknownMessageFormatError:
+                except UnknownMessageFormatError as e:
+                    logging.error(f"[Bot] UnknownMessageFormatError: {e}")
                     continue
                 
                 # Update groups if message is from an unknown group
                 if (
                     message.is_group()
-                    and self._groups_by_internal_id.get(message.group_info.id) is None
+                    and self._groups_by_internal_id.get(message.group.id) is None
                 ):
                     await self._detect_groups()
 
@@ -442,7 +425,7 @@ class SignalBot:
                 return True
 
             # b) whitelisted group ids
-            group_id = self._groups_by_internal_id.get(message.group_info.id, {}).get("id")
+            group_id = self._groups_by_internal_id.get(message.group.id, {}).get("id")
             if isinstance(group_ids, list) and group_id and group_id in group_ids:
                 return True
 

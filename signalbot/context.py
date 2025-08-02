@@ -36,16 +36,13 @@ class Context:
         ) = None,  # [{ "author": "uuid" , "start": 0, "length": 1 }]
         text_mode: str = None,
     ):
-        send_mentions = self._convert_receive_mentions_into_send_mentions(
-            self.message.mentions
-        )
         return await self.bot.send(
             self.message.recipient(),
             text,
             base64_attachments=base64_attachments,
             quote_author=self.message.source.uuid,
-            quote_mentions=[{ "author": mention.target.uuid , "start": mention.start, "length": mention.length } for mention in self.message.mentions],
-            quote_message=self.message.text,
+            quote_mentions=[{ "author": mention.target.uuid , "start": mention.start, "length": mention.length } for mention in self.message.data.mentions],
+            quote_message=self.message.data.message,
             quote_timestamp=self.message.timestamp,
             mentions=mentions,
             text_mode=text_mode,

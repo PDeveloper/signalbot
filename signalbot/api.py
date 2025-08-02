@@ -5,6 +5,11 @@ import websockets
 from typing import Any, Optional
 from typing import Literal
 
+from .types import (
+    Message, User, Group, SendResponse, ContactUpdate, GroupUpdate,
+    SendMessageRequest, ReactionRequest, ReceiptRequest, TypingRequest
+)
+
 class SignalAPI:
     def __init__(
         self,
