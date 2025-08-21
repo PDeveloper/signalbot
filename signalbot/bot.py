@@ -1,17 +1,20 @@
 import asyncio
 from collections import defaultdict
-import time
+from dataclasses import dataclass
+import itertools
+import json
 import logging
+import re
+import time
 import traceback
 from typing import Optional, Union, List, Callable, Any, TypeAlias, Literal
-import re
 import uuid
-import itertools
 
 from .api import SignalAPI, ReceiveMessagesError
 from .command import Command
 from .message import Message, UnknownMessageFormatError, message_from_json
 from .context import Context
+
 
 CommandList: TypeAlias = list[
     tuple[
@@ -132,6 +135,7 @@ class SignalBot:
             redis_port: 6379
         auto_download_attachments: False
         retry_interval: 1
+        receive_webhook: False
         """
         self.config = config
 
@@ -206,8 +210,13 @@ class SignalBot:
             logging.error("Cannot connect to the signal-cli-rest-api service, retrying")
             await asyncio.sleep(self.config.get("retry_interval", 1))
 
-    def start(self):
-        return _rerun_on_exception(self._async_post_init)
+    async def start(self):
+        try:
+            await _rerun_on_exception(self._async_post_init)
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            raise
 
     async def send(
         self,
@@ -311,6 +320,7 @@ class SignalBot:
     async def _detect_groups(self):
         # reset group lookups to avoid stale data
         self.groups = await self._signal.get_groups()
+        print(self.groups)
 
         self._groups_by_id: dict[str, dict[str, Any]] = {}
         self._groups_by_internal_id: dict[str, dict[str, Any]] = {}
@@ -361,10 +371,11 @@ class SignalBot:
 
         self._produce_tasks.clear()
 
-        for n in range(1, producers + 1):
-            produce_task = _rerun_on_exception(self._produce, n)
-            produce_task = asyncio.create_task(produce_task)
-            _store_reference_to_task(produce_task, self._produce_tasks)
+        if not self.config.get("receive_webhook", False):
+            for n in range(1, producers + 1):
+                produce_task = _rerun_on_exception(self._produce, n)
+                produce_task = asyncio.create_task(produce_task)
+                _store_reference_to_task(produce_task, self._produce_tasks)
 
         self._consume_tasks.clear()
 
@@ -373,29 +384,33 @@ class SignalBot:
             consume_task = asyncio.create_task(consume_task)
             _store_reference_to_task(consume_task, self._consume_tasks)
 
+    async def push_message(self, data: dict) -> None:
+        try:
+            message = message_from_json(data)
+            if not message:
+                return
+        except UnknownMessageFormatError as e:
+            logging.error(f"[Bot] UnknownMessageFormatError: {e}")
+            return
+
+        # Update groups if message is from an unknown group
+        if (
+            message.is_group()
+            and self._groups_by_internal_id.get(message.group.id) is None
+        ):
+            await self._detect_groups()
+
+        await self._ask_commands_to_handle(message)
+
     async def _produce(self, name: int) -> None:
         logging.info(f"[Bot] Producer #{name} started")
         try:
             async for raw_message in self._signal.receive():
-                logging.info(f"[Raw Message] {raw_message}")
-
                 try:
-                    message = message_from_json(raw_message)
-                    if not message:
-                        continue
-                except UnknownMessageFormatError as e:
-                    logging.error(f"[Bot] UnknownMessageFormatError: {e}")
-                    continue
-                
-                # Update groups if message is from an unknown group
-                if (
-                    message.is_group()
-                    and self._groups_by_internal_id.get(message.group.id) is None
-                ):
-                    await self._detect_groups()
-
-                await self._ask_commands_to_handle(message)
-
+                    data = json.loads(raw_message)
+                    await self.push_message(data)
+                except json.JSONDecodeError:
+                    raise UnknownMessageFormatError
         except ReceiveMessagesError as e:
             # TODO: retry strategy
             raise SignalBotError(f"Cannot receive messages: {e}")

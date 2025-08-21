@@ -32,12 +32,12 @@ def parse_envelope(data: dict) -> Optional[Message]:
         print(f"Failed to parse message: {e}")
         return None
 
-def message_from_json(json_string: str) -> Optional[Message]:
+def message_from_json(data: dict) -> Optional[Message]:
     try:
-        data = json.loads(json_string)
         return parse_envelope(data)
     except (json.JSONDecodeError, ValidationError):
-        raise UnknownMessageFormatError
+        print("Error decoding JSON or validating message format.")
+        return None
     except Exception as e:
         print(f"Unexpected error: {e}")
         return None
