@@ -320,7 +320,6 @@ class SignalBot:
     async def _detect_groups(self):
         # reset group lookups to avoid stale data
         self.groups = await self._signal.get_groups()
-        print(self.groups)
 
         self._groups_by_id: dict[str, dict[str, Any]] = {}
         self._groups_by_internal_id: dict[str, dict[str, Any]] = {}
