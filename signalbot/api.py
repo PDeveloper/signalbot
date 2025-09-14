@@ -22,8 +22,6 @@ class SignalAPI:
             phone_number=phone_number,
         )
 
-        # self.session = aiohttp.ClientSession()
-
     async def receive(self):
         try:
             uri = self._signal_api_uris.receive_ws_uri()
@@ -31,7 +29,6 @@ class SignalAPI:
             async with self.connection as websocket:
                 async for raw_message in websocket:
                     yield raw_message
-
         except Exception as e:
             raise ReceiveMessagesError(e)
 

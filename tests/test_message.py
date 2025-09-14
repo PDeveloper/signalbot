@@ -43,7 +43,7 @@ class TestMessage(unittest.IsolatedAsyncioTestCase):
 
     async def test_parse_type_own_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_sync_message)
-        self.assertEqual(message.type, MessageType.SYNC_MESSAGE)
+        self.assertEqual(message.type, MessageType.SYNC)
 
     async def test_parse_text_own_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_sync_message)
@@ -64,7 +64,7 @@ class TestMessage(unittest.IsolatedAsyncioTestCase):
 
     async def test_parse_type_foreign_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_data_message)
-        self.assertEqual(message.type, MessageType.DATA_MESSAGE)
+        self.assertEqual(message.type, MessageType.DATA)
 
     async def test_parse_text_foreign_message(self):
         message = await Message.parse(self.signal_api, TestMessage.raw_data_message)

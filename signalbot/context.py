@@ -40,7 +40,7 @@ class Context:
             self.message.recipient(),
             text,
             base64_attachments=base64_attachments,
-            quote_author=self.message.source.uuid,
+            quote_author=self.message.user.uuid,
             quote_mentions=[{ "author": mention.target.uuid , "start": mention.start, "length": mention.length } for mention in self.message.data.mentions],
             quote_message=self.message.data.message,
             quote_timestamp=self.message.timestamp,

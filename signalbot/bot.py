@@ -89,7 +89,7 @@ def _is_internal_id(internal_id: str) -> bool:
 # see https://stackoverflow.com/questions/55184226/catching-exceptions-in-individual-tasks-and-restarting-them
 async def _rerun_on_exception(coro, *args, **kwargs):
     """Restart coroutine by waiting an exponential time deplay"""
-    max_sleep = 5 * 60  # sleep for at most 5 mins until rerun
+    max_sleep = 1 * 60  # sleep for at most 1 mins until rerun
     reset = 3 * 60  # reset after 3 minutes running successfully
     init_sleep = 1  # always start with sleeping for 1 second
 
@@ -254,7 +254,7 @@ class SignalBot:
         # TODO: check that emoji is really an emoji
         recipient = message.recipient()
         recipient = self._resolve_receiver(recipient)
-        target_author = message.source.uuid
+        target_author = message.user.uuid
         timestamp = message.timestamp
         await self._signal.react(recipient, emoji, target_author, timestamp)
         logging.info(f"[Bot] New reaction: {emoji}")
@@ -429,7 +429,7 @@ class SignalBot:
                 return True
 
             # b) whitelisted numbers
-            if isinstance(contacts, list) and message.source in contacts:
+            if isinstance(contacts, list) and message.user in contacts:
                 return True
 
         # Case 2: Group message

@@ -1,14 +1,69 @@
 import re
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List, Annotated
+from pydantic import BaseModel, Field, ConfigDict, AliasPath
+from typing import Optional, List, Annotated, Literal, Self
+import base64
 from enum import Enum
 
 from .mapped_model import Mapped, MappedModel
 
 class MessageType(Enum):
-    SYNC_MESSAGE = "sync_message"
-    DATA_MESSAGE = "data_message"
-    RECEIPT_MESSAGE = "receipt_message"
+    SYNC = "sync"
+    DATA = "data"
+    RECEIPT = "receipt"
+    TYPING = "typing"
+    UNKNOWN = "unknown"
+
+class ReceiptType(Enum):
+    READ = "read"
+    VIEWED = "viewed"
+
+class AccountInfo(BaseModel):
+    path: str
+    environment: str
+    number: str
+    uuid: str
+
+class AccountList(BaseModel):
+    accounts: List[AccountInfo]
+    version: int
+
+class Group(BaseModel):
+    name: str
+    description: str
+    id: str
+    internal_id: str
+    members: List[str]
+    blocked: bool
+    pending_invites: List[str]
+    pending_requests: List[str]
+    invite_link: str
+    admins: List[str]
+
+class ContactProfile(BaseModel):
+    given_name: str
+    lastname: str
+    about: str
+    has_avatar: bool
+    last_updated_timestamp: int
+
+class ContactNickname(BaseModel):
+    name: str
+    given_name: str
+    family_name: str
+
+class Contact(BaseModel):
+    name: str
+    number: str
+    uuid: str
+    profile_name: str
+    username: str
+    color: str
+    blocked: bool
+    message_expiration: str
+    note: str
+    profile: ContactProfile
+    given_name: str
+    nickname: ContactNickname
 
 class User(BaseModel):
     name: Optional[str] = None
@@ -25,18 +80,6 @@ class Attachment(BaseModel):
     caption: Optional[str] = None
     upload_timestamp: Optional[int] = Field(alias='uploadTimestamp', default=None)
     thumbnail: Optional['Attachment'] = None
-
-class Group(BaseModel):
-    id: str
-    internal_id: str = Field(alias='internalId')
-    name: str
-    description: Optional[str] = None
-    avatar: Optional[str] = None
-    members: List[User] = []
-    admins: List[User] = []
-    blocked: bool = False
-    inbox_position: Optional[int] = Field(alias='inboxPosition', default=None)
-    archived: bool = False
 
 class SendResponse(BaseModel):
     timestamp: str
@@ -71,12 +114,18 @@ class Reaction(MappedModel):
     is_remove: Optional[bool] = Field(alias='isRemove', default=None)
 
 class GroupInfo(BaseModel):
-    id: Optional[str] = Field(alias='groupId', default=None)
+    id: str = Field(alias='groupId')
     name: Optional[str] = Field(alias='groupName', default=None)
     revision: int
     type: Optional[str] = None
 
-class MessageData(BaseModel):
+    def public_id(self) -> str:
+        return f'group.{base64.b64encode(self.id.encode()).decode()}'
+
+class RemoteDelete(BaseModel):
+    timestamp: int
+
+class DataMessage(BaseModel):
     timestamp: Optional[int] = None
     message: Optional[str] = None
     expires_in_seconds: int = Field(default=0, alias='expiresInSeconds')
@@ -86,6 +135,56 @@ class MessageData(BaseModel):
     quote: Optional[Quote] = None
     group_info: Optional[GroupInfo] = Field(alias='groupInfo', default=None)
     mentions: List[Mention] = []
+    remote_delete: Optional[RemoteDelete] = Field(alias='remoteDelete', default=None)
+
+class ReceiptMessage(BaseModel):
+    when: int
+    is_delivery: bool = Field(alias='isDelivery', default=False)
+    is_read: bool = Field(alias='isRead', default=False)
+    is_viewed: bool = Field(alias='isViewed', default=False)
+    timestamps: List[int] = []
+
+class TypingMessage(BaseModel):
+    action: str
+    timestamp: int
+    group_id: Optional[str] = Field(alias='groupId', default=None)
+
+### REST API MODELS
+
+class GroupPermissions(BaseModel):
+    add_members: Literal["only-admins", "every-member"] = "only-admins"
+    edit_group: Literal["only-admins", "every-member"] = "only-admins"
+
+class GroupCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    members: List[str] = []
+    expiration_time: Optional[int] = None
+    group_link: Optional[Literal["disabled", "enabled", "enabled-with-approval"]] = "disabled"
+    permissions: GroupPermissions = Field(default_factory=GroupPermissions)
+
+class GroupUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    base64_avatar: Optional[str] = None
+    expiration_time: Optional[int] = None
+    group_link: Optional[Literal["disabled", "enabled", "enabled-with-approval"]] = "disabled"
+
+class ReactionRequest(BaseModel):
+    recipient: str
+    reaction: str
+    target_author: str
+    timestamp: int = 0
+
+class ReceiptRequest(BaseModel):
+    receipt_type: Literal["read", "viewed"] = "read"
+    recipient: str
+    timestamp: int = 0
+
+class TypingRequest(BaseModel):
+    recipient: str
+
+### MAIN MESSAGE CLASS
 
 class Message(MappedModel):
     model_config = ConfigDict(
@@ -93,14 +192,33 @@ class Message(MappedModel):
         use_enum_values=True
     )
     
-    type: MessageType
-    source: Annotated[User, Mapped({"name": "sourceName", "number": "sourceNumber", "uuid": "sourceUuid"})]
+    source: str
+    user: Annotated[User, Mapped({"name": "sourceName", "number": "sourceNumber", "uuid": "sourceUuid"})]
+    sourceDevice: int
+
+    timestamp: int
     server_received_timestamp: int = Field(alias='serverReceivedTimestamp', default=None)
     server_delivered_timestamp: int = Field(alias='serverDeliveredTimestamp', default=None)
-    data: MessageData
+
+    data: Optional[DataMessage] = Field(alias='dataMessage', default=None)
+    sync: Optional[DataMessage] = Field(validation_alias=AliasPath('syncMessage', 'sentMessage'), default=None)
+    receipt: Optional[ReceiptMessage] = Field(alias='receiptMessage', default=None)
+    typing: Optional[TypingMessage] = Field(alias='typingMessage', default=None)
+
+    def type(self) -> MessageType:
+        if self.data is not None:
+            return MessageType.DATA
+        elif self.sync is not None:
+            return MessageType.SYNC
+        elif self.receipt is not None:
+            return MessageType.RECEIPT
+        elif self.typing is not None:
+            return MessageType.TYPING
+        else:
+            return MessageType.UNKNOWN
 
     def is_group(self) -> bool:
-        return self.data.group_info is not None
+        return self.data is not None and self.data.group_info is not None
     
     def is_private(self) -> bool:
         return not self.is_group()
@@ -108,45 +226,56 @@ class Message(MappedModel):
     def recipient(self) -> str:
         """Return the recipient (group ID or user number/UUID)"""
         if self.is_group():
-            return self.data.group_info.id
-        return self.source.number or self.source.uuid or self.source.name
+            return self.data.group_info.public_id()
+        return self.user.uuid or self.user.number
     
     @property
     def group(self) -> Optional[GroupInfo]:
         """Alias for backward compatibility"""
+        if self.data is None:
+            return None
         return self.data.group_info
     
     @property
     def text(self) -> Optional[str]:
         """Alias for message text"""
+        if self.data is None:
+            return None
         return self.data.message
-    
-    @property
-    def timestamp(self) -> Optional[int]:
-        """Message timestamp"""
-        return self.data.timestamp
+
+class LinkPreview(BaseModel):
+    base64_thumbnail: Optional[str] = None
+    description: Optional[str] = None
+    title: Optional[str] = None
+    url: Optional[str] = None
+
+class SendMessageMention(BaseModel):
+    author: str
+    length: int = 0
+    start: int = 0
 
 class SendMessageRequest(BaseModel):
-    receiver: str
-    text: str
-    base64_attachments: Optional[List[str]] = Field(alias='base64Attachments', default=None)
-    quote_author: Optional[str] = Field(alias='quoteAuthor', default=None)
-    quote_mentions: Optional[List[dict]] = Field(alias='quoteMentions', default=None)
-    quote_message: Optional[str] = Field(alias='quoteMessage', default=None)
-    quote_timestamp: Optional[str] = Field(alias='quoteTimestamp', default=None)
-    mentions: Optional[List[dict]] = None
-    text_mode: Optional[str] = Field(alias='textMode', default=None)
+    number: str
+    recipients: List[str]
+    message: Optional[str] = None
+    base64_attachments: Optional[List[str]] = None
+    quote_author: Optional[str] = None
+    quote_mentions: Optional[List[SendMessageMention]] = None
+    quote_message: Optional[str] = None
+    quote_timestamp: Optional[int] = None
+    mentions: Optional[List[SendMessageMention]] = None
+    sticker: Optional[str] = None
+    edit_timestamp: Optional[int] = None
+    view_once: bool = False
+    notify_self: Optional[bool] = None
+    text_mode: Optional[str] = None
+    link_preview: Optional[LinkPreview] = None
 
-class ReactionRequest(BaseModel):
-    recipient: str
-    emoji: str
-    target_author: str = Field(alias='targetAuthor')
-    timestamp: int
+    timestamp: Optional[int] = None  # Filled in response
 
-class ReceiptRequest(BaseModel):
-    recipient: str
-    receipt_type: str = Field(alias='receiptType')
-    timestamp: int
-
-class TypingRequest(BaseModel):
-    receiver: str
+    def reply(self, message: Message) -> Self:
+        self.quote_author = message.source
+        self.quote_message = message.data.message if message.data and message.data.message is not None else ""
+        self.quote_timestamp = message.timestamp
+        self.quote_mentions = [SendMessageMention(author=m.target.uuid or m.target.number, start=m.start, length=m.length) for m in message.data.mentions] if message.data else []
+        return self
