@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from .api import SignalAPI, SignalAccountAPI, MessageContext
 from .utils import rerun_on_exception, store_reference_to_task
-from ..types import AccountList, AccountInfo, Message, Contact, Group, SendMessageRequest
+from ..types import AccountList, AccountInternalInfo, AccountInfo, Message, Contact, Group, SendMessageRequest
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,10 @@ class SignalRouter:
                 accounts = AccountList.model_validate_json(accounts_str)
                 for account_info in accounts.accounts:
                     if account_info.number not in self.accounts:
+                        account_profile_info_path = self.directory / 'data' / account_info.path
+                        account_profile_info = AccountInternalInfo.model_validate_json(account_profile_info_path.read_text(encoding='utf-8'))
+                        account_info.username = account_profile_info.username
+                        account_info.device_id = account_profile_info.deviceId
                         account = SignalAccount(self.api, account_info)
                         self.accounts[account_info.number] = account
                         self.listeners[account_info.number] = []

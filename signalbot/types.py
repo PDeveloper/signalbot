@@ -17,11 +17,23 @@ class ReceiptType(Enum):
     READ = "read"
     VIEWED = "viewed"
 
+class AccountInternalInfo(BaseModel):
+    version: int
+    timestamp: int
+    serviceEnvironment: str
+    registered: bool
+    number: str
+    username: str
+    deviceId: int
+
 class AccountInfo(BaseModel):
     path: str
     environment: str
     number: str
     uuid: str
+
+    username: Optional[str] = None
+    device_id: Optional[int] = None
 
 class AccountList(BaseModel):
     accounts: List[AccountInfo]
@@ -279,3 +291,23 @@ class SendMessageRequest(BaseModel):
         self.quote_timestamp = message.timestamp
         self.quote_mentions = [SendMessageMention(author=m.target.uuid or m.target.number, start=m.start, length=m.length) for m in message.data.mentions] if message.data else []
         return self
+
+def request_to_message(request: SendMessageRequest, info: AccountInfo) -> Message:
+    """Convert SendMessageRequest to Message format for easier processing"""
+    return Message(
+        source=info.number,
+        user=User(name=None, number=info.number, uuid=info.uuid),
+        sourceDevice=info.device_id or 0,
+        timestamp=request.timestamp or 0,
+        data=DataMessage(
+            message=request.message,
+            attachments=[Attachment(base64_thumbnail=None, caption=None, content_type=None, filename=None, height=None, id=None, size=None, upload_timestamp=None, width=None)] if request.base64_attachments else [],
+            quote=Quote(
+                id=request.quote_timestamp or 0,
+                source=User(name=None, number=request.quote_author, uuid=None),
+                message=request.quote_message,
+                attachments=[]
+            ) if request.quote_author and request.quote_timestamp else None,
+            mentions=[Mention(start=m.start, length=m.length, target=User(name=None, number=None, uuid=m.author)) for m in request.mentions] if request.mentions else []
+        )
+    )
