@@ -83,6 +83,8 @@ class User(BaseModel):
     uuid: Optional[str] = None
 
 class Attachment(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     content_type: Optional[str] = Field(alias='contentType', default=None)
     filename: Optional[str] = None
     id: Optional[str] = None
@@ -126,6 +128,8 @@ class Reaction(MappedModel):
     is_remove: Optional[bool] = Field(alias='isRemove', default=None)
 
 class GroupInfo(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str = Field(alias='groupId')
     name: Optional[str] = Field(alias='groupName', default=None)
     revision: int
@@ -138,6 +142,8 @@ class RemoteDelete(BaseModel):
     timestamp: int
 
 class DataMessage(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     timestamp: Optional[int] = None
     message: Optional[str] = None
     expires_in_seconds: int = Field(default=0, alias='expiresInSeconds')
@@ -150,6 +156,8 @@ class DataMessage(BaseModel):
     remote_delete: Optional[RemoteDelete] = Field(alias='remoteDelete', default=None)
 
 class ReceiptMessage(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     when: int
     is_delivery: bool = Field(alias='isDelivery', default=False)
     is_read: bool = Field(alias='isRead', default=False)
@@ -157,6 +165,8 @@ class ReceiptMessage(BaseModel):
     timestamps: List[int] = []
 
 class TypingMessage(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     action: str
     timestamp: int
     group_id: Optional[str] = Field(alias='groupId', default=None)
