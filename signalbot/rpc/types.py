@@ -1,27 +1,27 @@
 from pydantic import BaseModel
 
-class SignalRPCGroupUser(BaseModel):
+class SignalGroupUser(BaseModel):
     number: str | None
     uuid: str | None
 
-class SignalRPCGroup(BaseModel):
+class SignalGroupExtended(BaseModel):
     id: str
     name: str
     description: str
     isMember: bool
     isBlocked: bool
     messageExpirationTime: int
-    members: list[SignalRPCGroupUser]
-    pendingMembers: list[SignalRPCGroupUser]
-    requestingMembers: list[SignalRPCGroupUser]
-    admins: list[SignalRPCGroupUser]
-    banned: list[SignalRPCGroupUser]
+    members: list[SignalGroupUser]
+    pendingMembers: list[SignalGroupUser]
+    requestingMembers: list[SignalGroupUser]
+    admins: list[SignalGroupUser]
+    banned: list[SignalGroupUser]
     permissionAddMember: str
     permissionEditDetails: str
     permissionSendMessage: str
     groupInviteLink: str | None
 
-class SignalRPCProfile(BaseModel):
+class SignalProfileExtended(BaseModel):
     lastUpdateTimestamp: int
     givenName: str | None
     familyName: str | None
@@ -30,7 +30,7 @@ class SignalRPCProfile(BaseModel):
     hasAvatar: bool
     mobileCoinAddress: str | None
 
-class SignalRPCContact(BaseModel):
+class SignalContactExtended(BaseModel):
     number: str | None
     uuid: str | None
     username: str | None
@@ -47,4 +47,4 @@ class SignalRPCContact(BaseModel):
     messageExpirationTime: int
     profileSharing: bool
     unregistered: bool
-    profile: SignalRPCProfile | None
+    profile: SignalProfileExtended | None

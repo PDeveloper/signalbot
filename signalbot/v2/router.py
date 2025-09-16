@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from .api import SignalAPI, SignalAccountAPI, MessageContext
 from .utils import rerun_on_exception, store_reference_to_task
 from ..types import AccountList, AccountInternalInfo, AccountInfo, Message, Contact, Group, SendMessageRequest
-from signalbot.rpc.types import SignalRPCContact, SignalRPCGroup
+from signalbot.rpc.types import SignalContactExtended, SignalGroupExtended
 
 logger = logging.getLogger(__name__)
 
@@ -171,11 +171,11 @@ class SignalRouter:
         return await self.on_json_message(account, envelope)
 
     def _parse_rpc_contacts(self, contacts: list[dict]) -> None:
-        contacts_rpc = [SignalRPCContact.model_validate(contact) for contact in contacts]
+        contacts_rpc = [SignalContactExtended.model_validate(contact) for contact in contacts]
         # print(contacts_rpc)
 
     def _parse_rpc_groups(self, groups: list[dict]) -> None:
-        groups_rpc = [SignalRPCGroup.model_validate(group) for group in groups]
+        groups_rpc = [SignalGroupExtended.model_validate(group) for group in groups]
         # print(groups_rpc)
 
     async def on_rpc_results(self, data: dict) -> None:
