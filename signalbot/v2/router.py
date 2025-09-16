@@ -164,11 +164,11 @@ class SignalRouter:
         finally:
             self._q.task_done()
 
-    async def on_rpc_receive(self, data: dict) -> None:
+    async def on_rpc_receive(self, data: dict) -> Message | None:
         params: dict = data.get("params", {})
         account: str = params.get("account", None)
         envelope: dict = params.get("envelope", {})
-        await self.on_json_message(account, envelope)
+        return await self.on_json_message(account, envelope)
 
     def _parse_rpc_contacts(self, contacts: list[dict]) -> None:
         contacts_rpc = [SignalRPCContact.model_validate(contact) for contact in contacts]
@@ -192,11 +192,11 @@ class SignalRouter:
             except Exception as e:
                 pass
 
-    async def on_json_message(self, account: str, data: dict) -> None:
+    async def on_json_message(self, account: str, data: dict) -> Message | None:
         if not account in self.accounts:
             logging.error(f"[Bot] Unknown account for phone number {account}, skipping message")
-            return
-        
+            return None
+
         try:
             message = Message(**data)
             if not message:
@@ -206,6 +206,7 @@ class SignalRouter:
             return None
 
         if self.filter and not self.filter.filter(account, message):
-            return
+            return message
         
         await self._q.put((account, message, time.perf_counter()))
+        return message

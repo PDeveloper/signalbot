@@ -304,9 +304,6 @@ class MessageContext:
         )
     
     async def receipt(self, receipt_type: Literal["read", "viewed"]) -> None:
-        if self.data is None or self.message.is_group():
-            return
-        
         await self.api.receipt(
             recipient=self.message.source,
             timestamp=self.message.timestamp,
