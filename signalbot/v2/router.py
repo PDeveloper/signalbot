@@ -165,17 +165,18 @@ class SignalRouter:
             self._q.task_done()
 
     async def on_rpc_receive(self, data: dict) -> None:
-        account = data.get("account", None)
-        envelope = data.get("envelope", {})
-        self.on_json_message(account, envelope)
+        params: dict = data.get("params", {})
+        account: str = params.get("account", None)
+        envelope: dict = params.get("envelope", {})
+        await self.on_json_message(account, envelope)
 
     def _parse_rpc_contacts(self, contacts: list[dict]) -> None:
         contacts_rpc = [SignalRPCContact.model_validate(contact) for contact in contacts]
-        print(contacts_rpc)
+        # print(contacts_rpc)
 
     def _parse_rpc_groups(self, groups: list[dict]) -> None:
         groups_rpc = [SignalRPCGroup.model_validate(group) for group in groups]
-        print(groups_rpc)
+        # print(groups_rpc)
 
     async def on_rpc_results(self, data: dict) -> None:
         account = data.get("account", None)
